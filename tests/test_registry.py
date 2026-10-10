@@ -7,6 +7,8 @@ from languages import registry
 from languages.registry import (
     DisabledLanguageError,
     LanguageConfigError,
+    SinkSpec,
+    SourceSpec,
     UnknownLanguageError,
     load_registry,
 )
@@ -79,6 +81,7 @@ BASE = {
     "cwes": [],
     "sources": [],
     "sinks": [],
+    "sanitizers": [],
 }
 REMOVE = object()
 
@@ -100,8 +103,40 @@ def test_a_valid_file_loads(tmp_path):
     assert specs["demo"].cwes == ()
 
 
+def test_sources_sinks_and_sanitizers_are_parsed(tmp_path):
+    write(
+        tmp_path,
+        {
+            "sources": [{"kind": "call", "code": r"request\.args\[.*"}],
+            "sinks": [
+                {"name": "execute", "arg": 1, "cwe": "CWE-89"},
+                {"name": "run", "code": r"subprocess\.run.*", "arg": 1},
+            ],
+            "sanitizers": ["int"],
+        },
+    )
+    spec = load_registry(tmp_path)["demo"]
+    assert spec.sources == (SourceSpec(kind="call", code=r"request\.args\[.*"),)
+    assert spec.sinks[0] == SinkSpec(name="execute", arg=1, cwe="CWE-89")
+    assert spec.sinks[1].code == r"subprocess\.run.*"
+    assert spec.sanitizers == ("int",)
+
+
 BAD_FILES = [
     ({"sinks": REMOVE}, "missing keys: sinks"),
+    ({"sanitizers": REMOVE}, "missing keys: sanitizers"),
+    ({"sanitizers": "int"}, "'sanitizers' must be a list"),
+    ({"sanitizers": ["("]}, "not a valid regex"),
+    ({"sources": ["eval"]}, "'sources[0]' must be a mapping"),
+    ({"sources": [{"kind": "argument", "name": "fgets"}]}, "'kind' must be one of"),
+    ({"sources": [{"kind": "call"}]}, "needs 'name' or 'code'"),
+    ({"sources": [{"kind": "call", "code": "x", "typo": 1}]}, "unknown keys in 'sources[0]'"),
+    ({"sinks": [{"name": "execute"}]}, "is missing: arg"),
+    ({"sinks": [{"name": "execute", "arg": "1"}]}, "'arg' must be an integer"),
+    ({"sinks": [{"name": "execute", "arg": True}]}, "'arg' must be an integer"),
+    ({"sinks": [{"name": "execute", "arg": -1}]}, "'arg' must be an integer"),
+    ({"sinks": [{"name": "execute", "arg": 1, "cwe": "89"}]}, "invalid 'cwe'"),
+    ({"sinks": [{"name": "(", "arg": 1}]}, "not a valid regex"),
     ({"enabeld": True}, "unknown keys: enabeld"),
     ({"name": "other"}, "must match the file name"),
     ({"name": "Demo"}, "lowercase letters"),
