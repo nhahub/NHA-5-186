@@ -35,7 +35,10 @@ _REQUIRED_KEYS = (
     "cwes",
     "sources",
     "sinks",
+    "sanitizers",
 )
+# Source kinds the taint code understands. The C spike may add "argument" and "parameter".
+_SOURCE_KINDS = ("call",)
 
 
 # --------------------------------------------------------------------------- errors
@@ -84,6 +87,29 @@ class TreeSitterSpec:
 
 
 @dataclass(frozen=True)
+class SourceSpec:
+    """Where tainted data enters. Patterns are Joern regexes: they must match the WHOLE text."""
+
+    kind: str
+    name: str | None = None  # regex on the call name
+    code: str | None = None  # regex on the call's source text
+
+
+@dataclass(frozen=True)
+class SinkSpec:
+    """A dangerous call. `arg` is Joern's argument index of the dangerous value.
+
+    For module-qualified Python calls such as os.system(x) index 0 is the module and the
+    payload is 1; for bare calls such as open(x) the payload is also 1.
+    """
+
+    name: str  # regex on the call name
+    arg: int
+    code: str | None = None  # regex on the call's source text, to tell apart same-name calls
+    cwe: str | None = None
+
+
+@dataclass(frozen=True)
 class LanguageSpec:
     name: str
     enabled: bool
@@ -91,8 +117,9 @@ class LanguageSpec:
     joern_frontend: str
     tree_sitter: TreeSitterSpec
     cwes: tuple[str, ...]
-    sources: tuple[str, ...]
-    sinks: tuple[str, ...]
+    sources: tuple[SourceSpec, ...]
+    sinks: tuple[SinkSpec, ...]
+    sanitizers: tuple[str, ...]  # regexes on call names; a match inside a taint path flags it
 
 
 # --------------------------------------------------------------------------- parsing
@@ -157,6 +184,78 @@ def _parse_tree_sitter(path: Path, value: Any, extensions: tuple[str, ...]) -> T
     return TreeSitterSpec(default=default, by_extension=dict(by_extension))
 
 
+def _regex(path: Path, where: str, value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise _fail(path, f"{where} must be a non-empty string")
+    try:
+        re.compile(value)
+    except re.error as exc:
+        raise _fail(path, f"{where} is not a valid regex ({exc})") from exc
+    return value
+
+
+def _entries(path: Path, data: dict[str, Any], key: str) -> list[Any]:
+    value = data[key]
+    if value is None:
+        raise _fail(path, f"'{key}' is empty; write '{key}: []' for an empty list")
+    if not isinstance(value, list):
+        raise _fail(path, f"'{key}' must be a list")
+    return value
+
+
+def _entry_mapping(path: Path, where: str, item: Any, allowed: set[str]) -> dict[str, Any]:
+    if not isinstance(item, dict):
+        raise _fail(path, f"{where} must be a mapping")
+    extra = sorted(str(k) for k in set(item) - allowed)
+    if extra:
+        raise _fail(path, f"unknown keys in {where}: {', '.join(extra)}")
+    return item
+
+
+def _parse_sources(path: Path, data: dict[str, Any]) -> tuple[SourceSpec, ...]:
+    result = []
+    for i, raw in enumerate(_entries(path, data, "sources")):
+        where = f"'sources[{i}]'"
+        item = _entry_mapping(path, where, raw, {"kind", "name", "code"})
+        kind = item.get("kind")
+        if kind not in _SOURCE_KINDS:
+            raise _fail(path, f"{where} 'kind' must be one of: {', '.join(_SOURCE_KINDS)}")
+        name = _regex(path, f"{where} 'name'", item["name"]) if "name" in item else None
+        code = _regex(path, f"{where} 'code'", item["code"]) if "code" in item else None
+        if name is None and code is None:
+            raise _fail(path, f"{where} needs 'name' or 'code'")
+        result.append(SourceSpec(kind=kind, name=name, code=code))
+    return tuple(result)
+
+
+def _parse_sinks(path: Path, data: dict[str, Any]) -> tuple[SinkSpec, ...]:
+    result = []
+    for i, raw in enumerate(_entries(path, data, "sinks")):
+        where = f"'sinks[{i}]'"
+        item = _entry_mapping(path, where, raw, {"name", "arg", "code", "cwe"})
+        missing = [key for key in ("name", "arg") if key not in item]
+        if missing:
+            raise _fail(path, f"{where} is missing: {', '.join(missing)}")
+        name = _regex(path, f"{where} 'name'", item["name"])
+        arg = item["arg"]
+        # bool is a subclass of int in Python, so exclude it explicitly
+        if isinstance(arg, bool) or not isinstance(arg, int) or arg < 0:
+            raise _fail(path, f"{where} 'arg' must be an integer >= 0")
+        code = _regex(path, f"{where} 'code'", item["code"]) if "code" in item else None
+        cwe = item.get("cwe")
+        if cwe is not None and (not isinstance(cwe, str) or not _CWE_RE.match(cwe)):
+            raise _fail(path, f"{where} has an invalid 'cwe' {cwe!r} (expected like 'CWE-89')")
+        result.append(SinkSpec(name=name, arg=arg, code=code, cwe=cwe))
+    return tuple(result)
+
+
+def _parse_sanitizers(path: Path, data: dict[str, Any]) -> tuple[str, ...]:
+    names = _string_list(path, data, "sanitizers")
+    for name in names:
+        _regex(path, f"'sanitizers' entry {name!r}", name)
+    return names
+
+
 def _parse_spec(path: Path, data: Any) -> LanguageSpec:
     if not isinstance(data, dict):
         raise _fail(path, "the file must contain a mapping of keys to values")
@@ -194,8 +293,9 @@ def _parse_spec(path: Path, data: Any) -> LanguageSpec:
         joern_frontend=joern_frontend,
         tree_sitter=_parse_tree_sitter(path, data["tree_sitter"], extensions),
         cwes=_string_list(path, data, "cwes", _CWE_RE),
-        sources=_string_list(path, data, "sources"),
-        sinks=_string_list(path, data, "sinks"),
+        sources=_parse_sources(path, data),
+        sinks=_parse_sinks(path, data),
+        sanitizers=_parse_sanitizers(path, data),
     )
 
 
