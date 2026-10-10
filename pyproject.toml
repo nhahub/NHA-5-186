@@ -16,7 +16,9 @@ dependencies = [
     "pyarrow",
     "datasets",
     "ijson",
-    "pyyaml"
+    "pyyaml",
+    "mlflow",
+    "wandb"
 ]
 
 [project.optional-dependencies]
