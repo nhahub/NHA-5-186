@@ -122,16 +122,61 @@ def test_sources_sinks_and_sanitizers_are_parsed(tmp_path):
     assert spec.sanitizers == ("int",)
 
 
+def test_every_source_kind_and_arg_from_are_parsed(tmp_path):
+    write(
+        tmp_path,
+        {
+            "sources": [
+                {"kind": "call", "name": "getenv"},
+                {"kind": "argument", "name": "read|recv", "arg": 2},
+                {"kind": "parameter", "name": "argv"},
+            ],
+            "sinks": [{"name": "sprintf", "arg_from": 3, "cwe": "CWE-120"}],
+        },
+    )
+    spec = load_registry(tmp_path)["demo"]
+    assert spec.sources == (
+        SourceSpec(kind="call", name="getenv"),
+        SourceSpec(kind="argument", name="read|recv", arg=2),
+        SourceSpec(kind="parameter", name="argv"),
+    )
+    assert spec.sinks == (SinkSpec(name="sprintf", arg_from=3, cwe="CWE-120"),)
+    assert spec.sinks[0].arg is None
+
+
+def test_cpp_taint_config_matches_the_spike():
+    cpp = registry.get("cpp")
+    kinds = {(s.kind, s.name, s.arg) for s in cpp.sources}
+    assert ("call", "getenv", None) in kinds
+    assert ("argument", "fgets", 1) in kinds  # the CALL as a source gave 0 flows (c03)
+    assert ("argument", "read|recv", 2) in kinds
+    assert ("parameter", "argv", None) in kinds
+    assert {(s.name, s.arg) for s in cpp.sinks} >= {("system", 1), ("strcpy", 2), ("memcpy", 3)}
+    assert "realpath" in cpp.sanitizers
+    assert not any(re.fullmatch(p, "strncpy") for p in cpp.sanitizers)
+
+
 BAD_FILES = [
     ({"sinks": REMOVE}, "missing keys: sinks"),
     ({"sanitizers": REMOVE}, "missing keys: sanitizers"),
     ({"sanitizers": "int"}, "'sanitizers' must be a list"),
     ({"sanitizers": ["("]}, "not a valid regex"),
     ({"sources": ["eval"]}, "'sources[0]' must be a mapping"),
-    ({"sources": [{"kind": "argument", "name": "fgets"}]}, "'kind' must be one of"),
+    ({"sources": [{"kind": "stdin", "name": "fgets"}]}, "'kind' must be one of"),
+    ({"sources": [{"kind": "argument", "name": "fgets"}]}, "of kind 'argument' needs 'arg'"),
+    ({"sources": [{"kind": "argument", "arg": 1}]}, "of kind 'argument' needs 'name'"),
+    ({"sources": [{"kind": "argument", "name": "fgets", "arg": -1}]}, "'arg' must be an integer"),
+    ({"sources": [{"kind": "argument", "name": "fgets", "arg": True}]}, "'arg' must be an integer"),
+    ({"sources": [{"kind": "call", "name": "getenv", "arg": 1}]}, "only valid for kind 'argument'"),
+    ({"sources": [{"kind": "parameter", "code": "argv"}]}, "of kind 'parameter' needs 'name'"),
+    ({"sources": [{"kind": "parameter", "name": "argv", "arg": 1}]}, "takes only 'name'"),
     ({"sources": [{"kind": "call"}]}, "needs 'name' or 'code'"),
     ({"sources": [{"kind": "call", "code": "x", "typo": 1}]}, "unknown keys in 'sources[0]'"),
-    ({"sinks": [{"name": "execute"}]}, "is missing: arg"),
+    ({"sinks": [{"arg": 1}]}, "is missing: name"),
+    ({"sinks": [{"name": "execute"}]}, "needs one of 'arg' or 'arg_from'"),
+    ({"sinks": [{"name": "execute", "arg": 1, "arg_from": 2}]}, "cannot have both"),
+    ({"sinks": [{"name": "sprintf", "arg_from": 0}]}, "'arg_from' must be an integer >= 1"),
+    ({"sinks": [{"name": "sprintf", "arg_from": "3"}]}, "'arg_from' must be an integer"),
     ({"sinks": [{"name": "execute", "arg": "1"}]}, "'arg' must be an integer"),
     ({"sinks": [{"name": "execute", "arg": True}]}, "'arg' must be an integer"),
     ({"sinks": [{"name": "execute", "arg": -1}]}, "'arg' must be an integer"),
