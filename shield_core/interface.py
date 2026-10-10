@@ -51,7 +51,7 @@ class Result(_Serializable):
     cwe: Optional[str]
     confidence: float
     findings: list[Finding] = field(default_factory=list)
-    taintPaths: list[TaintPath] = field(default_factory=list)
+    taint_paths: list[TaintPath] = field(default_factory=list)
     model_version: str = "stub"
     schema_version: str = SCHEMA_VERSION
 
