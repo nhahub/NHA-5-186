@@ -569,8 +569,8 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done. Task ID = `W<week>-P<pers
 
 **P3 — Semantic, Fusion & Eval (Atef) · 15 h · reviewer P4**
 
-- [ ]  W2-P3-01 [URGENT, 6 h] **V1**: window-pooled frozen CodeBERT → XGBoost, binary + CWE, calibrated confidence, imbalance handled; first on manifest v0, final on frozen v1
-- [ ]  W2-P3-03 [URGENT, 3 h] Metrics module upgrade in `shield_core/eval/metrics.py` (per-CWE, per-language, multi-label, support and group counts; closes C4) and the V1/V2 per-CWE table
+- [x]  W2-P3-01 [URGENT, 6 h] **V1**: window-pooled frozen CodeBERT → XGBoost, binary + CWE, calibrated confidence, imbalance handled; first on manifest v0, final on frozen v1
+- [x]  W2-P3-03 [URGENT, 3 h] Metrics module upgrade in `shield_core/eval/metrics.py` (per-CWE, per-language, multi-label, support and group counts; closes C4) and the V1/V2 per-CWE table
 - [ ]  W2-P3-04 [MILD, 3 h] Embed every CPG node’s code text (fp16, ≤ 512 tokens), cache by unique node string, report cache size and hit rate
 - [ ]  W2-P3-02 [MILD, 1.5 h] **V2**: add AST/code-metric features (from W2-P5-02); keep the length-only baseline next to it (D30)
 - [ ]  W2-P3-05 [SIMPLE, 1 h] Re-run token-length statistics on the final deduped files; define the length-only baseline
