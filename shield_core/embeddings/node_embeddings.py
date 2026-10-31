@@ -1,7 +1,9 @@
-import hashlib
+from pathlib import Path
 
 import torch
 from transformers import AutoModel, AutoTokenizer
+
+from shield_core.graph_dataset.schema import text_hash64
 
 
 class CPGNodeEmbedder:
@@ -14,19 +16,17 @@ class CPGNodeEmbedder:
         for param in self.model.parameters():
             param.requires_grad = False
 
-        self.model = self.model.half()
+        if self.device.type == "cuda":
+            self.model = self.model.half()
         self.model.to(self.device)
 
         self.cache = {}
         self.total_requests = 0
         self.cache_hits = 0
 
-    def _get_string_hash(self, text: str) -> str:
-        return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
     def embed_node(self, node_text: str) -> torch.Tensor:
         self.total_requests += 1
-        node_key = self._get_string_hash(node_text)
+        node_key = text_hash64(node_text)  # same key P2 stores as node_text_hash
 
         if node_key in self.cache:
             self.cache_hits += 1
@@ -46,6 +46,18 @@ class CPGNodeEmbedder:
         embedding = outputs.last_hidden_state.mean(dim=1).squeeze().cpu()
         self.cache[node_key] = embedding
         return embedding
+
+    def save_cache(self, path):
+        """Save the cache to disk: a dict {node_text_hash: 768-number vector}."""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(self.cache, path)
+
+    def load_cache(self, path):
+        """Load a saved cache, so texts embedded before are not embedded again."""
+        path = Path(path)
+        if path.exists():
+            self.cache = torch.load(path, weights_only=True)
 
     def report_cache_stats(self):
         cache_size = len(self.cache)
