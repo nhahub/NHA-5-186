@@ -1,113 +1,124 @@
 # SHIELD Adjusted Delivery Plan
 
-> Companion execution plan for the existing [`SHIELD_PLAN.md`](../../SHIELD_PLAN.md). The master plan remains the long-term record; this document records the deadline-driven MVP route and its scope cuts. It assumes the team is finishing Week 2 now.
+> Companion plan for [`SHIELD_PLAN.md`](../../SHIELD_PLAN.md). The master plan stays the long-term record. This file is the short, deadline-driven route and its scope cuts. It assumes the team is finishing Week 2 now.
 
-**Goal:** deliver a working, deployable SHIELD application with the current V1 model, experiment tracking, and a measured GNN V2 improvement attempt. Build only the user-facing path needed to demonstrate the product. Do not claim the GNN is better unless the frozen evaluation supports it.
+**Goal:** ship a working, deployed SHIELD app with the current V1 model, tracked experiments, and one measured GNN (V2) attempt. Build only what the demo needs. Do not say the GNN is better unless the frozen evaluation shows it.
 
-**Stack:** React, FastAPI, Docker Compose, existing `shield_core.interface`, existing MLflow tracking helper (D17). This is an adjusted-plan choice; the master plan's Angular decision remains unchanged. Keep the app synchronous for pasted-code scans; defer Celery, Redis, PostgreSQL, auth, repo ingestion, VS Code, CodeT5, and multi-language UI polish unless the deadline has room.
+**Stack:** Streamlit (UI), FastAPI (API), Docker Compose, the existing `shield_core.interface`, and the existing MLflow helper (D17).
 
-## 1. Working assumptions and project boundary
+Out of scope unless time is left: Celery, Redis, PostgreSQL, login, repo scanning, VS Code extension, CodeT5, multi-language UI polish.
 
-- Week 2 ends with the real V1 wired through `shield_core.interface` and CLI, split QA green, and the chosen graph subset/cache documented. If one is late, the product must still serve the best loadable V1 artifact; mark model quality and data limits in the demo.
-- The app is a thin client of the frozen Python interface/API contract. Do not create a second prediction implementation in the API.
-- First usable flow: paste a supported code snippet → select language → scan → view vulnerable/clean, CWE, confidence, model version, and findings. Include a clear unavailable/error state.
-- Deploy one Docker Compose stack to a single Linux VM or an available managed container host. For the deadline demo, use one public URL, one API process, and one React build. Persistent job/database services are out of scope.
-- “MLOps” for this delivery means reproducible runs, model/version traceability, evaluation artifact, and a repeatable container build/deploy. It does not mean a full model registry service or continuous retraining platform.
+## 1. Working assumptions
 
-## 2. Delivery sequence: application first, GNN second
+- Week 2 ends with: V1 loading through `shield_core.interface` and the CLI, split QA green, and the graph subset/cache written down. If something is late, the app still uses the best V1 that loads, and the demo says what is not final.
+- The UI is a thin client. Streamlit calls FastAPI, and FastAPI calls `shield_core.interface`. No second prediction code anywhere.
+- First user flow: paste code → choose language → scan → see vulnerable/clean, **CWE family**, exact CWE (small), confidence, model version. Show a clear error message when something fails.
+- Deploy one Docker Compose stack (API + Streamlit) to one Linux VM or container host. One public URL. No database.
+- "MLOps" here means: reproducible runs, model version you can trace, an evaluation report, and a repeatable container build/deploy. Not a registry service or auto-retraining.
 
-### Finish Week 2 (now): stabilize the model seam
+## 2. Order of work: app first, GNN second
 
-Keep the remaining G2 work on the critical path:
+### Finish Week 2 (now)
 
-1. Complete split QA and freeze the leakage-safe manifest.
-2. Ensure V1 loads through `interface.predict()` and the CLI with the real artifact and version recorded.
-3. Record per-CWE/per-language metrics and unsupported/low-support classes; do not present provisional metrics as final.
-4. Save the graph extraction subset, cache location, extraction failures, and node-embedding status for the GNN work.
-5. Decide explicitly which incomplete Week 2 items are dropped: prioritize these over a broad V2 feature set, LLM baseline, and full corpus extraction.
+1. Finish split QA and freeze the leakage-safe manifest.
+2. V1 loads through `interface.predict()` and the CLI with the real artifact and version.
+3. Per-CWE **and** per-family metrics are saved (already done in W2-P3-03: `docs/modeling/v1_per_cwe.md`, `docs/modeling/v1_per_family.md`). Re-run them on the final V1 once split QA is green. Do not show provisional numbers as final.
+4. Write down the graph subset, cache location, extraction failures, and node-embedding status.
+5. Drop on purpose: broad V2 features (W2-P3-02), LLM baseline, full-dataset graph extraction.
 
-### Phase A: build and deploy the V1 application (about 5 working days)
+### Phase A: build and deploy the V1 app (3 days)
 
-Do this after the Week 2 prerequisites are complete. Keep model work limited to V1 stability; this phase delivers a complete usable application before GNN experiments begin.
+| Day | Work | Done when |
+|---|---|---|
+| 1 | **API + pages with mock data.** P4 builds FastAPI routes (`/v1/health`, `/v1/languages`, `/v1/scan`, `/v1/model`) over `shield_core.interface`. P5 builds the Streamlit shell. Everyone builds their page with fake data. | Health and languages routes work. Every page opens with mock data. |
+| 2 | **Connect for real.** Pages call the API instead of mock data. Handle errors, input size and time limits. Scan clean and vulnerable examples. | A local scan uses the real V1 and shows family, CWE, confidence, version. |
+| 3 | **Package and deploy.** Docker images for API and Streamlit, Docker Compose, deploy, smoke test, write deploy and rollback steps. | Public (or staging) URL answers health and a scan. |
 
-| Day | Focus | Work | Exit evidence |
+**Gate:** start the GNN sprint only when the app can scan a snippet with V1, show the result and model version, and recover from errors. If deployment is blocked by infrastructure, a clean local Compose demo is enough for now; keep fixing deployment in parallel.
+
+### Phase B: GNN V2
+
+The app keeps using V1 until the GNN passes the gate in Section 4.
+
+| Day | Work | Done when |
+|---|---|---|
+| 1 | **Check graph data.** PyG graphs match the frozen train/val/test manifest; label coverage; dropped-graph counts; no split crossing. Cache node embeddings for the subset. | Graph dataset report + subset manifest saved. |
+| 2 | **Model A (control).** Small graph-only GNN, fixed seed. | Reproducible run logged. |
+| 3 | **Model B (V2).** GNN with CodeBERT node embeddings, same data and labels. No architecture search. | Checkpoint and run info saved. |
+| 4 | **Compare.** A, B, V1 and the length-only baseline on the same data. Pick on validation only. Run the frozen test once. | Comparison table (family + CWE). |
+| 5 | **Decide.** Write the model card. If V2 passes the gate, add it as an optional model and test it in the app. If not, V1 stays the main model. | Model card + recorded decision; app still works on V1. |
+
+### Week 4 (only if there is time): make it reliable, do not add features
+
+Better errors, input limits, health checks, evaluation report, one-click demo. Repo scanning only if the interface already supports it safely.
+
+## 3. Who owns what
+
+Each person owns **one Streamlit page** and **the backend piece behind it**, plus their model/data work. Build the page with mock data first, then connect it to the API.
+
+App layout (Streamlit multipage):
+
+```
+app/
+  Home.py              # P5: scan form (paste code, choose language, scan button)
+  pages/
+    1_Result.py        # P4: verdict, family, CWE, confidence, fix status
+    2_Findings.py      # P2: findings list, line numbers, taint path if present
+    3_History.py       # P1: scans from this browser session
+    4_Model.py         # P3: model version + family and CWE metric tables
+api/
+  main.py              # P4: FastAPI app
+```
+
+| Person | Streamlit page | Backend / model work | Hands off |
 |---|---|---|---|
-| 1 | Contract and backend | Freeze the React-to-FastAPI request flow; implement health, supported languages, and snippet scan routes as thin wrappers over `shield_core.interface`. | A sample returns matching interface and API JSON; health and language routes work. |
-| 2 | Frontend | Build React scan form, language selection, loading/error states, and result display for verdict, CWE, confidence, findings, and model version. | Local end-to-end scan uses the real V1 artifact. |
-| 3 | Integration | Handle validation and API errors, confirm result serialization, enforce request size/time bounds, and show unsupported cases clearly. | Clean and vulnerable example snippets both render correctly. |
-| 4 | Packaging and deployment | Build FastAPI and React containers; configure Docker Compose; deploy the same image to the demo host. | Public/staging URL responds to health and snippet scan. |
-| 5 | Stabilization | Fix only blocking defects, rehearse the demo, verify startup from a clean checkout, and document deploy/rollback steps. | Stable V1 demo with recorded image/model tag and known limitations. |
+| **P1 — Hatem** | `3_History.py`: scans from this session (`st.session_state`, no database). | Input checks, `/v1/languages`, request size/time limits, checks that the API matches `interface.predict()`. Owns data and split provenance. | Frozen data/split info and API request examples → P5. |
+| **P2 — Eyad** | `2_Findings.py`: findings with family, CWE, confidence, file/line if available; taint path only when present. | GNN inference behind the interface; checkpoint loading; fall back to V1 if the GNN fails. | A/B checkpoints and how to load them → P3, P4. |
+| **P3 — Atef** | `4_Model.py`: model version, **family table first**, CWE table below it in an expander with a short note on why CWE scores are lower. Reads the saved reports (`v1_per_family.md` / `v1_per_cwe.md` or `metrics.json`). | One command for training/evaluation, MLflow logging, calibration, metrics, length-only baseline (W2-P3-05), and the V1-vs-GNN comparison. | Chosen model + exact run config → P4. Model card → team. |
+| **P4 — Bigad** | `1_Result.py`: main result. **Family large**, exact CWE small ("Most likely CWE: CWE-787"), confidence, model version. Never says "verified" without real evidence. | FastAPI app, JSON output, error mapping, `/v1/health`, `/v1/model`, CWE → family mapping in the API, model selection and V1 fallback. | API docs (OpenAPI) → P5. |
+| **P5 — Maram** | `Home.py`: app shell, scan form, language choice, API client used by all pages. | Docker/Compose, environment config, CI image build, deployment, smoke test. | Public URL, env vars, rollback steps → team. |
 
-**Phase A gate:** do not start the condensed GNN sprint until the deployed app can scan a snippet with V1, display the result and model version, and recover from API/model errors. If deployment is blocked by infrastructure, a clean local Compose demo is the temporary exit criterion; continue the deployment issue in parallel without blocking GNN work.
+**Rules:**
 
-### Phase B: condensed Week 3 — GNN V2 (about 5 working days)
+- P4 owns API integration. P5 owns UI integration and deployment.
+- P2 and P3 own model artifacts and evaluation. P1 and P2 approve data/graph validity.
+- Nobody changes the interface silently. Write a short change note for any new field.
+- **Contract change note (this version):** the API scan response adds `cwe_family` next to `cwe`. It is computed in the API from `cwe_family_map.json` (P4). `shield_core.interface.Result` is not changed.
 
-Once Phase A passes its gate, keep the application stable and dedicate the model track to the focused GNN experiment. Only integrate a GNN artifact after evaluation; until then the app continues to use V1.
+## 4. GNN V2: one focused experiment
 
-| Day | Focus | Work | Exit evidence |
-|---|---|---|---|
-| 1 | Graph data validation | Validate PyG graphs against the frozen train/validation/test manifest; confirm label coverage, dropped-graph counts, and no split crossing. Cache node embeddings for this subset. | Graph dataset report and usable subset manifest saved. |
-| 2 | Control model | Train one small graph-only baseline (variant A) with a fixed seed and manageable subset. | Reproducible baseline run logged. |
-| 3 | GNN V2 | Train one CodeBERT-node-initialized GNN (variant B) on the same groups and labels; avoid architecture sweeps. | Checkpoint and run metadata saved. |
-| 4 | Evaluation | Compare A, B, and V1 on identical eligible data; select only on validation; evaluate frozen test once. Report macro-F1 and per-CWE precision/recall/support and dropped-graph rates. | Evaluation table; no test-set tuning. |
-| 5 | Decision and integration | Document whether V2 improves V1. If it passes the acceptance gate, register it as an optional model and smoke-test it through the app; otherwise keep V1 as primary. | Model card, recorded decision, and app still runs on V1 fallback. |
+The target is a better model, but it is not guaranteed. If V2 fails the gate, ship V1.
 
-### Week 4 only if available: hardening, not expansion
+1. **Same data.** V1 and the GNNs use the same leakage-safe train/val/test groups, labels and eligible rows. Select on validation; look at the frozen test once.
+2. **Two models only.** A: graph-only control (node-type embeddings). B/V2: frozen CodeBERT node-text embeddings + node/edge-type embeddings + one small GAT or gated GNN + pooling + binary and CWE heads.
+3. **Keep it small.** Use only graphs already extracted; node cap per language (Python 750, C/C++ the documented cap); skip and log bad graphs; use the node-embedding cache. Start with Python if C/C++ graphs are not ready.
+4. **Check for shortcuts.** Report the length-only baseline and V1 next to the GNN. Report dropped-graph rates and class coverage. No synthetic samples in val/test.
+5. **Acceptance gate.** Promote V2 only if it beats V1 on **family macro-F1** on the same validation data, and does not clearly hurt recall on the important families. Confirm once on the frozen test. Exact-CWE scores are reported next to it for information, not used for the decision.
 
-Use remaining time for the highest-risk reliability gap: file/repository scanning only if the current interface supports it safely; otherwise improve scan errors, input limits, deployment health, evaluation/reporting, and one-click demo reliability. Add auth and persistence only if the app will be used beyond a controlled demo.
+Minimum artifacts: checkpoint, config, fixed seed, dataset/split hash, graph converter/schema version, node-embedding cache info, MLflow run (or saved run JSON), **family and CWE** evaluation tables, short model card.
 
-## 3. Five-person ownership (each owns one UI slice and its API/backend slice)
+## 5. MLOps and deployment checklist
 
-Each person is responsible for the vertical slice from React view to FastAPI route/service, plus their existing domain contribution. Share a single API branch/integration owner; each slice should use mocked API data until the contract is wired.
+- **Track:** use `shield_core/tracking.py` and the MLflow logging already in `scripts/training/v1_pipeline.py`. Log seed, config, dataset/split hashes, graph converter version, metrics, artifact path. Never log source code.
+- **Package:** versioned model artifacts; check cold start and V1 fallback. Do not commit large files.
+- **Build:** pinned Python packages; one image for FastAPI, one for Streamlit; Compose health checks.
+- **Deploy:** deploy the same images you tested locally; secrets stay out of the repo; open only the needed ports; record build tag and date.
+- **Operate:** `/v1/health`, request size/time limits, logs without code contents, one smoke scan, rollback to the previous image/model tag.
+- **Reproduce:** one command to train/evaluate, one command to start the app. The same model version shows in the API result and in MLflow.
 
-| Person | Frontend responsibility | Backend/model responsibility | Week 3 priority and handoff |
-|---|---|---|---|
-| **P1 — Hatem** | Scan history/status panel (local in-memory history; no database). | Input validation, language support endpoint, scan request limits, adapter checks against `interface.predict()`. Own data/split provenance and model-input assumptions. | Verify frozen data/split metadata and expose supported languages; hand off API schema examples to P5. |
-| **P2 — Eyad** | Findings/evidence view: CWE, confidence, file/line if available, taint-path placeholder only when present. | GNN inference adapter behind the model registry/interface; graph checkpoint loading and graceful V1 fallback. | Train and package A/B checkpoints; hand off stable prediction call and artifact requirements to P3/P4. |
-| **P3 — Atef** | Model/evaluation summary view: model version and compact per-CWE metrics page/table from saved report. | Reproducible training/evaluation entry point, MLflow run logging, calibration/metrics and V1-vs-GNN comparison. | Own GNN-vs-V1 evaluation and model card; hand off selected artifact and exact run config to P4. |
-| **P4 — Bigad** | Result detail and fix status presentation, showing verification evidence without overstating “verified”. | FastAPI app, contract serialization, exception mapping, health route, registry selection and V1 fallback. | Own API integration and contract compatibility; hand off OpenAPI spec to P5. |
-| **P5 — Maram** | React app shell, scan form, routing, responsive layout, API client and deploy-ready build. | Docker/Compose, environment configuration, CI image build, deployment and smoke-check instructions. | Own UI integration/deployment; hand off URL, env vars, and rollback instructions to the team. |
+## 6. Demo scope
 
-**Shared integration rules:** P4 owns API integration; P5 owns UI integration and release packaging. P2/P3 own model artifacts and evaluation. P1/P2 approve data/graph validity. No one edits the frozen interface silently; add a contract version/change note if a field is truly needed.
+**Must show:** Streamlit app, language choice, pasted code, V1 result with **family + CWE**, confidence and model version, model page with family and CWE tables, API health, deployed URL. After Phase B: the GNN run record and the comparison with V1.
 
-## 4. GNN V2: narrow experiment intended to improve on V1
+**Only if already working:** graph/taint evidence in findings, session scan history.
 
-“Better model” is the target, not a guaranteed outcome. The team should ship V1 as the default if GNN V2 fails the evidence gate.
-
-1. **Keep the data fixed.** Use the same leakage-safe train/validation/test groups, label mapping, and eligible examples for V1 and GNN comparisons. Use validation to select; inspect the frozen test once.
-2. **Use graph-only A as a control, then one proposed V2.** A: current shared node-type embeddings. B/V2: frozen CodeBERT embeddings for each node’s code text + shared node-type/edge-type embeddings + one small GAT or gated-GNN encoder + graph pooling + binary and CWE heads. Do not compare multiple architectures unless the first run is already complete.
-3. **Keep scope tractable.** Use existing extracted graphs only; cap nodes at the already measured safe per-language setting (Python 750; C/C++ use the documented cap), batch by graph, skip/log invalid graphs, and cache node text embeddings. Begin with Python if graph-label coverage is the bottleneck; add C/C++ only when its cached subset is ready.
-4. **Prevent shortcut gains.** Report length-only and V1 baselines. Compare macro-F1 and per-CWE precision/recall/support; report dropped graph rates and class coverage. Do not use synthetic samples in validation/test.
-5. **Acceptance gate.** Promote V2 only if it beats V1 macro-F1 on the same validation data and does not materially damage supported high-priority CWE recall; confirm once on the frozen test and report confidence/support. Otherwise retain V1 as primary and present GNN as an experimental result.
-
-Minimum artifacts: model checkpoint, config, fixed seed, dataset/split hash, graph converter/schema version, node embedding cache metadata, MLflow run (or saved run JSON if MLflow is unavailable), per-CWE evaluation table, and short model card with intended use and limitations.
-
-## 5. Minimal MLOps and deployment checklist
-
-- **Track:** extend existing `shield_core/tracking.py`; log seed, model/config, dataset and split hashes, graph converter version, metrics, and artifact path. Never log raw source code to a hosted tracker.
-- **Package:** versioned local model artifacts and registry config; verify cold-start loading and V1 fallback. Do not commit large artifacts if existing storage/release mechanism is available.
-- **Build:** pinned Python dependencies, FastAPI container, React static build, Compose health checks, environment-based API key/config only if auth is enabled.
-- **Deploy:** deploy the same Compose/image artifact tested locally to the demo host; keep secrets outside the repo; expose only the app/API ports needed; record build tag and deployment date.
-- **Operate:** `/v1/health`, bounded request size/time, useful server logs without code contents, one smoke scan, deployment rollback to prior image/model tag.
-- **Reproduce:** one documented command for training/evaluation and one for local app startup; same model tag must appear in API results and MLflow/run manifest.
-
-## 6. Demo scope and explicit cuts
-
-**Must demo:** React UI; supported-language selector; pasted snippet; V1-backed result; model version and confidence; FastAPI health; deployed URL. After Phase B, add the reproducible GNN experiment record and measured V1 comparison to the demo.
-
-**Only if already working:** graph/taint evidence in the finding, basic scan history for the current browser session.
-
-**Defer:** repo URL/ZIP scanning and async job queue, login/OAuth, PostgreSQL, Redis/Celery, VS Code extension, automated fixes in the UI, CodeT5, Java, full-dataset graph extraction, augmentation, broad hyperparameter search, polished analytics dashboard.
+**Not now:** repo/ZIP scanning, job queue, login, PostgreSQL, Redis/Celery, VS Code extension, automatic fixes in the UI, CodeT5, Java, full-dataset graph extraction, augmentation, hyperparameter search, analytics dashboard.
 
 ## 7. Definition of done
 
-- Clean checkout can build and start the app from the documented steps.
-- Deployed UI can submit a snippet and display an API result from the real registered model.
-- API reports health, supported languages, schema/model version, and actionable errors.
-- V1 remains loadable as fallback; model version is visible to the user.
-- GNN V2 has a reproducible run and a fair comparison against V1; results and limitations are written down, including a negative result if it does not win.
-- No test-set-based tuning, no unsupported language claim, and no UI claim that a fix or result is “verified” without the configured evidence.
-
-## 8. Decisions to log in the master plan
-
-At the next team sync, add a dated row to `SHIELD_PLAN.md` Section 2 and a short entry in Section 15 for: the MVP deadline and cut line; React/FastAPI shipped during the compressed schedule; deployment target; GNN comparison/acceptance rule; and deferred product services. This companion file does not silently change the master plan's settled decisions.
+- A clean checkout builds and starts the app with the documented steps.
+- The deployed app scans a snippet and shows the real model's result: family, CWE, confidence, version.
+- The API reports health, supported languages, model/schema version and clear errors.
+- V1 still loads as fallback.
+- The GNN has a reproducible run and a fair comparison with V1 (family and CWE), written down even if it loses.
+- No tuning on the test set, no claim for unsupported languages, no "verified" claim without evidence.
