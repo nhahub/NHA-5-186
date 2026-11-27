@@ -107,8 +107,8 @@ def model_info() -> dict[str, Any]:
     }
 
 
-@app.post("/v1/scan")
-@app.post("/v1/scan/snippet", include_in_schema=False)
+@app.post("/v1/scan", response_model=None)
+@app.post("/v1/scan/snippet", include_in_schema=False, response_model=None)
 def scan(request: ScanRequest) -> dict[str, Any] | JSONResponse:
     if len(request.code.encode("utf-8")) > MAX_SNIPPET_BYTES:
         return _error(
