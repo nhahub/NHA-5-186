@@ -3,10 +3,10 @@
 **Contract version:** 1.0 (`schema_version = "1.0"`)
 **Interface version:** 1.0 (`INTERFACE_VERSION`): function signatures and exceptions
 **Schema version:** 1.0 (`SCHEMA_VERSION`): payload fields
-**Status:** Draft for Gate G1 sign-off (W1-P4-02)
-**Implemented in:** Week 5 (`api/`, FastAPI). Until then this document is the source of truth, and the frontend and VS Code extension build against a mock server.
+**Status:** MVP routes implemented; repository scans, fixes, history, authentication, and rate limiting remain planned.
+**Implemented in:** `api/main.py` (FastAPI). Install the API extra with `pip install -e ".[api]"` and start with `uvicorn api.main:app --reload`.
 
-This is a **document only**. Every request and response shape mirrors the dataclasses in `shield_core/interface.py` (Decision D19), so the backend is a thin wrapper: it validates input, calls `shield_core.interface`, and returns `.to_dict()`.
+The API is a thin wrapper: it validates input, calls `shield_core.interface`, returns `.to_dict()`, and adds the API-only `cwe_family` derived from `scripts/training/cwe_family_map.json`.
 
 If this file and `interface.py` disagree, **`interface.py` wins**; fix this document in the same PR. Changes to either require team agreement and a row in the Decisions Log (Plan Section 2).
 
@@ -128,7 +128,7 @@ Verification is a **soft check, not a proof** (Plan Section 4.1). Clients should
 
 ## 3. Endpoints
 
-### 3.1 `POST /v1/scan/snippet`
+### 3.1 `POST /v1/scan`
 
 Scan one piece of code synchronously.
 
@@ -146,7 +146,7 @@ Scan one piece of code synchronously.
 | `code` | string | yes (size-limited, see Section 5) |
 | `language` | string | yes (must be enabled) |
 
-**Response `200`:** a `Result`.
+**Response `200`:** a `Result` plus `cwe_family` (a family label when `cwe` is set, otherwise `null`). The `Result` dataclass is unchanged.
 
 For snippet scans, `TaintStep.file` is the literal `"snippet"` and `Finding.file` is `null`.
 
@@ -154,6 +154,7 @@ For snippet scans, `TaintStep.file` is the literal `"snippet"` and `Finding.file
 {
   "vulnerable": true,
   "cwe": "CWE-89",
+  "cwe_family": "input_injection",
   "confidence": 0.91,
   "findings": [
     {
@@ -324,7 +325,7 @@ Enabled languages, read from the LanguageSpec registry. Clients (web dropdown, V
 }
 ```
 
-### 3.7 `GET /v1/health` and `GET /v1/models`
+### 3.7 `GET /v1/health` and `GET /v1/model`
 
 `GET /v1/health`
 
@@ -332,21 +333,22 @@ Enabled languages, read from the LanguageSpec registry. Clients (web dropdown, V
 { "status": "ok", "schema_version": "1.0", "interface_version": "1.0"}
 ```
 
-`GET /v1/models`
+`GET /v1/model`
 
 ```json
 {
-  "default": "v4-fusion-1.0",
-  "fallback": "v1-xgb-1.0",
+  "default": "v1",
+  "fallback": "stub-v0",
   "available": [
-    { "version": "v1-xgb-1.0", "loaded": true },
-    { "version": "v3-gnn-1.0", "loaded": true },
-    { "version": "v4-fusion-1.0", "loaded": true }
+    { "version": "v1", "languages": ["python", "cpp"] },
+    { "version": "stub-v0", "languages": ["python", "cpp"] }
   ]
 }
 ```
 
-`health` and `models` do not require an API key (health only; `models` may require one, to be decided in Week 5).
+These read-only routes do not require an API key in the current MVP. Authentication remains future work.
+
+`/v1/models` and `/v1/scan/snippet` remain compatibility aliases but are omitted from the OpenAPI schema.
 
 ---
 
@@ -400,10 +402,11 @@ Bad input shape (malformed JSON, missing field) is rejected by the API layer wit
 
 | Endpoint | Calls | Returns |
 |---|---|---|
-| `POST /v1/scan/snippet` | `predict(code, language)` | `Result` |
+| `POST /v1/scan` | `predict(code, language)` | `Result` plus API-only `cwe_family` |
 | `POST /v1/scan/repo` + `GET /v1/jobs/{id}` | `scan_repo(path)` | `RepoResult` |
 | `POST /v1/fix` | `suggest_fix(finding)` | `FixResult` |
 | `GET /v1/languages` | language registry | language list |
+| `GET /v1/model` | model registry configuration | configured default, fallback, and versions/languages |
 
 ---
 

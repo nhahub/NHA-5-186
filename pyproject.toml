@@ -34,6 +34,7 @@ data = ["pandas", "pyarrow", "ijson", "datasets"]
 ml = ["torch", "transformers", "scikit-learn"]
 tracking = ["mlflow", "wandb"]
 gnn = ["torch_geometric>=2.8"]
+api = ["fastapi", "uvicorn[standard]"]
 
 [tool.setuptools.packages.find]
 include = ["shield_core*", "scripts*"]
