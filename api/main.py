@@ -122,4 +122,6 @@ def scan(request: ScanRequest) -> dict[str, Any] | JSONResponse:
     payload["cwe_family"] = (
         CWE_TO_FAMILY.get(result.cwe, FALLBACK_FAMILY) if result.cwe is not None else None
     )
+    for finding in payload["findings"]:
+        finding["cwe_family"] = CWE_TO_FAMILY.get(finding["cwe"], FALLBACK_FAMILY)
     return payload
